@@ -2,7 +2,7 @@
 
 这是一个基于HTML5 Canvas实现的双人贪吃蛇游戏，适合两个玩家在同一台设备上通过键盘控制进行对战。游戏具有可调节速度、生命系统、不同得分的食物以及得分兑换生命等特色功能。
 
-![游戏截图](<img width="536" alt="image" src="https://github.com/user-attachments/assets/e3c66f75-ce15-4772-8258-f814cc24b68b" />)  
+<img src="https://github.com/user-attachments/assets/e3c66f75-ce15-4772-8258-f814cc24b68b" alt="游戏截图" width="200" height="300" />
 
 ## 特性
 - **双人模式**：玩家1使用WASD键，玩家2使用箭头键控制各自的蛇。
