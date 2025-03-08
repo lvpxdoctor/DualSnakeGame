@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>双人贪吃蛇</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+        }
+        .game-container {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        .scores {
+            margin: 10px;
+        }
+        #startButton {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+        }
+        .life-notice {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(255, 165, 0, 0.9);
+            color: white;
+            padding: 20px;
+            font-size: 24px;
+            border-radius: 10px;
+            display: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="scores">
+            <span id="score1">玩家1得分: 0 | 生命: 5</span> | 
+            <span id="score2">玩家2得分: 0 | 生命: 5</span>
+        </div>
+        <label>游戏速度: 
+            <input type="range" id="speed" min="1" max="10" value="4">
+        </label>
+        <br>
+        <button id="startButton">开始游戏</button>
+        <br>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="lifeNotice" class="life-notice"></div>
+        <p>玩家1: WASD移动 | 玩家2: 箭头键移动</p >
+        <p>红色食物: 10分 | 黄色食物: 20分</p >
+        <p>规则: 每获得100分自动转换为1条命</p >
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+        const startButton = document.getElementById('startButton');
+        const lifeNotice = document.getElementById('lifeNotice');
+
+        // 玩家1的蛇
+        let snake1 = {
+            x: 5,
+            y: 5,
+            dx: 1,
+            dy: 0,
+            cells: [],
+            maxCells: 4,
+            score: 0,
+            lives: 5
+        };
+
+        // 玩家2的蛇
+        let snake2 = {
+            x: 15,
+            y: 15,
+            dx: -1,
+            dy: 0,
+            cells: [],
+            maxCells: 4,
+            score: 0,
+            lives: 5
+        };
+
+        // 两种食物
+        let foods = [
+            {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'red', points: 10},
+            {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'yellow', points: 20}
+        ];
+
+        let count = 0;
+        let speedControl = document.getElementById('speed');
+        let speed = parseInt(speedControl.value);
+        let gameRunning = false;
+        let animationFrameId;
+
+        speedControl.addEventListener('input', () => {
+            speed = parseInt(speedControl.value);
+        });
+
+        // 初始化显示静态蛇和食物
+        function drawInitialScreen() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制初始蛇1（4格长度）
+            ctx.fillStyle = 'green';
+            for (let i = 0; i < 4; i++) {
+                ctx.fillRect((snake1.x - i) * gridSize, snake1.y * gridSize, gridSize-2, gridSize-2);
+            }
+
+            // 绘制初始蛇2（4格长度）
+            ctx.fillStyle = 'blue';
+            for (let i = 0; i < 4; i++) {
+                ctx.fillRect((snake2.x + i) * gridSize, snake2.y * gridSize, gridSize-2, gridSize-2);
+            }
+
+            // 绘制初始食物
+            foods.forEach(food => {
+                ctx.fillStyle = food.color;
+                ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize-2, gridSize-2);
+            });
+        }
+
+        // 初始绘制
+        drawInitialScreen();
+
+        startButton.addEventListener('click', () => {
+            if (!gameRunning) {
+                gameRunning = true;
+                startButton.textContent = '游戏进行中';
+                startButton.disabled = true;
+                resetGame();
+                gameLoop();
+            }
+        });
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+
+            // 控制游戏速度
+            if (++count < 11 - speed) return;
+            count = 0;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 更新蛇1位置
+            snake1.x += snake1.dx;
+            snake1.y += snake1.dy;
+            if (snake1.x < 0) snake1.x = tileCount - 1;
+            if (snake1.x >= tileCount) snake1.x = 0;
+            if (snake1.y < 0) snake1.y = tileCount - 1;
+            if (snake1.y >= tileCount) snake1.y = 0;
+
+            // 更新蛇2位置
+            snake2.x += snake2.dx;
+            snake2.y += snake2.dy;
+            if (snake2.x < 0) snake2.x = tileCount - 1;
+            if (snake2.x >= tileCount) snake2.x = 0;
+            if (snake2.y < 0) snake2.y = tileCount - 1;
+            if (snake2.y >= tileCount) snake2.y = 0;
+
+            // 更新蛇1身体
+            snake1.cells.unshift({x: snake1.x, y: snake1.y});
+            if (snake1.cells.length > snake1.maxCells) snake1.cells.pop();
+
+            // 更新蛇2身体
+            snake2.cells.unshift({x: snake2.x, y: snake2.y});
+            if (snake2.cells.length > snake2.maxCells) snake2.cells.pop();
+
+            // 绘制食物
+            foods.forEach(food => {
+                ctx.fillStyle = food.color;
+                ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize-2, gridSize-2);
+            });
+
+            // 绘制蛇1并检查吃食物
+            ctx.fillStyle = 'green';
+            snake1.cells.forEach(cell => {
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize-2, gridSize-2);
+                foods.forEach((food, index) => {
+                    if (cell.x === food.x && cell.y === food.y) {
+                        snake1.maxCells++;
+                        snake1.score += food.points;
+                        checkScoreForLife(snake1, '玩家1');
+                        foods[index] = {
+                            x: Math.floor(Math.random() * tileCount),
+                            y: Math.floor(Math.random() * tileCount),
+                            color: food.color,
+                            points: food.points
+                        };
+                    }
+                });
+            });
+
+            // 绘制蛇2并检查吃食物
+            ctx.fillStyle = 'blue';
+            snake2.cells.forEach(cell => {
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize-2, gridSize-2);
+                foods.forEach((food, index) => {
+                    if (cell.x === food.x && cell.y === food.y) {
+                        snake2.maxCells++;
+                        snake2.score += food.points;
+                        checkScoreForLife(snake2, '玩家2');
+                        foods[index] = {
+                            x: Math.floor(Math.random() * tileCount),
+                            y: Math.floor(Math.random() * tileCount),
+                            color: food.color,
+                            points: food.points
+                        };
+                    }
+                });
+            });
+
+            // 检查碰撞
+            snake1.cells.forEach((cell, index) => {
+                for (let i = index + 1; i < snake1.cells.length; i++) {
+                    if (cell.x === snake1.cells[i].x && cell.y === snake1.cells[i].y) {
+                        handleCollision(snake1);
+                    }
+                }
+                snake2.cells.forEach(cell2 => {
+                    if (cell.x === cell2.x && cell.y === cell2.y) {
+                        handleCollision(snake1);
+                    }
+                });
+            });
+
+            snake2.cells.forEach((cell, index) => {
+                for (let i = index + 1; i < snake2.cells.length; i++) {
+                    if (cell.x === snake2.cells[i].x && cell.y === snake2.cells[i].y) {
+                        handleCollision(snake2);
+                    }
+                }
+                snake1.cells.forEach(cell1 => {
+                    if (cell.x === cell1.x && cell.y === cell1.y) {
+                        handleCollision(snake2);
+                    }
+                });
+            });
+
+            // 更新得分和生命显示
+            document.getElementById('score1').textContent = `玩家1得分: ${snake1.score} | 生命: ${snake1.lives}`;
+            document.getElementById('score2').textContent = `玩家2得分: ${snake2.score} | 生命: ${snake2.lives}`;
+        }
+
+        function handleCollision(snake) {
+            snake.lives--;
+            if (snake.lives <= 0) {
+                alert(`${snake === snake1 ? '玩家1' : '玩家2'} 生命耗尽！游戏结束！`);
+                stopGame();
+            } else {
+                resetSnake(snake);
+            }
+        }
+
+        function checkScoreForLife(snake, playerName) {
+            if (snake.score >= 100) {
+                snake.lives++;
+                snake.score -= 100;
+                showLifeNotice(`${playerName} +1生命`);
+            }
+        }
+
+        function showLifeNotice(message) {
+            lifeNotice.textContent = message;
+            lifeNotice.style.display = 'block';
+            setTimeout(() => {
+                lifeNotice.style.display = 'none';
+            }, 2000); // 2秒后隐藏
+        }
+
+        function resetSnake(snake) {
+            snake.x = Math.floor(tileCount / 2);
+            snake.y = Math.floor(tileCount / 2);
+            snake.cells = [];
+            snake.maxCells = 4;
+            snake.dx = snake === snake1 ? 1 : -1;
+            snake.dy = 0;
+        }
+
+        function resetGame() {
+            snake1.score = 0;
+            snake1.lives = 5;
+            snake2.score = 0;
+            snake2.lives = 5;
+            resetSnake(snake1);
+            resetSnake(snake2);
+            foods = [
+                {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'red', points: 10},
+                {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'yellow', points: 20}
+            ];
+        }
+
+        function stopGame() {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            startButton.textContent = '开始游戏';
+            startButton.disabled = false;
+            drawInitialScreen(); // 游戏结束后恢复初始画面
+        }
+
+        // 键盘控制
+        document.addEventListener('keydown', e => {
+            if (!gameRunning) return;
+
+            // 玩家1 WASD
+            if (e.key === 'w' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = -1; }
+            else if (e.key === 's' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = 1; }
+            else if (e.key === 'a' && snake1.dx === 0) { snake1.dx = -1; snake1.dy = 0; }
+            else if (e.key === 'd' && snake1.dx === 0) { snake1.dx = 1; snake1.dy = 0; }
+
+            // 玩家2 箭头键
+            if (e.key === 'ArrowUp' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = -1; }
+            else if (e.key === 'ArrowDown' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = 1; }
+            else if (e.key === 'ArrowLeft' && snake2.dx === 0) { snake2.dx = -1; snake2.dy = 0; }
+            else if (e.key === 'ArrowRight' && snake2.dx === 0) { snake2.dx = 1; snake2.dy = 0; }
+        });
+    </script>
+</body>
+</html>
