@@ -5,146 +5,287 @@
     <style>
         canvas {
             border: 1px solid black;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="100%" height="100%" fill="#e0f7fa"/><circle cx="100" cy="100" r="50" fill="#ffeb3b"/><circle cx="500" cy="500" r="40" fill="#ff5722"/><rect x="200" y="300" width="80" height="80" fill="#4caf50" transform="rotate(45 240 340)"/></svg>') no-repeat;
+            background-size: cover;
         }
         .game-container {
             text-align: center;
             font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        .side-panel {
+            width: 200px;
+            text-align: left;
+            padding: 10px;
         }
         .scores {
             margin: 10px;
         }
-        #startButton {
+        #startButton, #pauseButton {
             padding: 10px 20px;
             font-size: 16px;
             margin: 10px;
         }
-        .life-notice {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: rgba(255, 165, 0, 0.9);
-            color: white;
-            padding: 20px;
-            font-size: 24px;
-            border-radius: 10px;
-            display: none;
-            z-index: 10;
+        .notice {
+            margin-top: 10px;
+            color: #ff5722;
+            font-size: 16px;
         }
     </style>
 </head>
 <body>
     <div class="game-container">
-        <div class="scores">
-            <span id="score1">玩家1得分: 0 | 生命: 5</span> | 
-            <span id="score2">玩家2得分: 0 | 生命: 5</span>
+        <div class="side-panel">
+            <h3>玩家指引</h3>
+            <p><strong>玩家1（绿色蛇）:</strong><br>W（上）、S（下）、A（左）、D（右）</p>
+            <p><strong>玩家2（蓝色蛇）:</strong><br>↑（上）、↓（下）、←（左）、→（右）</p>
+            <div id="notice1" class="notice"></div>
+            <div id="notice2" class="notice"></div>
         </div>
-        <label>游戏速度: 
-            <input type="range" id="speed" min="1" max="10" value="4">
-        </label>
-        <br>
-        <button id="startButton">开始游戏</button>
-        <br>
-        <canvas id="gameCanvas" width="400" height="400"></canvas>
-        <div id="lifeNotice" class="life-notice"></div>
-        <p>玩家1: WASD移动 | 玩家2: 箭头键移动</p >
-        <p>红色食物: 10分 | 黄色食物: 20分</p >
-        <p>规则: 每获得100分自动转换为1条命</p >
+        <div>
+            <div class="scores">
+                <span id="score1">玩家1得分: 0 | 生命: 5 | 节点: 4</span> | 
+                <span id="score2">玩家2得分: 0 | 生命: 5 | 节点: 4</span>
+            </div>
+            <label>游戏速度: 
+                <input type="range" id="speed" min="1" max="10" value="1">
+            </label>
+            <br>
+            <button id="startButton">开始游戏</button>
+            <button id="pauseButton" disabled>暂停</button>
+            <br>
+            <canvas id="gameCanvas" width="600" height="600"></canvas>
+        </div>
+        <div class="side-panel">
+            <h3>规则</h3>
+            <p>红色食物: 10分</p>
+            <p>黄色食物: 20分</p>
+            <p>生命食物🌱: +1命</p>
+            <p>每100分: +1命</p>
+            <p>撞墙🧱/炸弹💣: -1命</p>
+            <p>时空隧道🌀: 随机传送</p>
+            <p>银蛋🥈(10节点): 1秒后炸，清4x4炸弹</p>
+            <p>金蛋🥇(12节点): 1秒后炸，清4x4墙壁</p>
+        </div>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 上下文不可用');
         const gridSize = 20;
         const tileCount = canvas.width / gridSize;
         const startButton = document.getElementById('startButton');
-        const lifeNotice = document.getElementById('lifeNotice');
+        const pauseButton = document.getElementById('pauseButton');
+        const notice1 = document.getElementById('notice1');
+        const notice2 = document.getElementById('notice2');
 
-        // 玩家1的蛇
         let snake1 = {
-            x: 5,
-            y: 5,
-            dx: 1,
-            dy: 0,
-            cells: [],
-            maxCells: 4,
-            score: 0,
-            lives: 5
+            x: 5, y: 5, dx: 1, dy: 0, cells: [], maxCells: 4,
+            score: 0, lives: 5, foodEaten: 0, livesFromScore: 0
         };
-
-        // 玩家2的蛇
         let snake2 = {
-            x: 15,
-            y: 15,
-            dx: -1,
-            dy: 0,
-            cells: [],
-            maxCells: 4,
-            score: 0,
-            lives: 5
+            x: 25, y: 25, dx: -1, dy: 0, cells: [], maxCells: 4,
+            score: 0, lives: 5, foodEaten: 0, livesFromScore: 0
         };
 
-        // 两种食物
-        let foods = [
-            {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'red', points: 10},
-            {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'yellow', points: 20}
-        ];
+        let foods = [];
+        let traps = [];
+        let effects = [];
+        let eggs = [];
 
         let count = 0;
         let speedControl = document.getElementById('speed');
         let speed = parseInt(speedControl.value);
         let gameRunning = false;
+        let gamePaused = false;
         let animationFrameId;
 
         speedControl.addEventListener('input', () => {
             speed = parseInt(speedControl.value);
         });
 
-        // 初始化显示静态蛇和食物
-        function drawInitialScreen() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 绘制初始蛇1（4格长度）
-            ctx.fillStyle = 'green';
-            for (let i = 0; i < 4; i++) {
-                ctx.fillRect((snake1.x - i) * gridSize, snake1.y * gridSize, gridSize-2, gridSize-2);
-            }
-
-            // 绘制初始蛇2（4格长度）
-            ctx.fillStyle = 'blue';
-            for (let i = 0; i < 4; i++) {
-                ctx.fillRect((snake2.x + i) * gridSize, snake2.y * gridSize, gridSize-2, gridSize-2);
-            }
-
-            // 绘制初始食物
-            foods.forEach(food => {
-                ctx.fillStyle = food.color;
-                ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize-2, gridSize-2);
-            });
-        }
-
-        // 初始绘制
-        drawInitialScreen();
-
         startButton.addEventListener('click', () => {
             if (!gameRunning) {
                 gameRunning = true;
+                gamePaused = false; // 确保开始时未暂停
                 startButton.textContent = '游戏进行中';
                 startButton.disabled = true;
+                pauseButton.disabled = false;
                 resetGame();
-                gameLoop();
+                requestAnimationFrame(gameLoop); // 启动游戏循环
             }
         });
 
-        function gameLoop() {
-            if (!gameRunning) return;
+        pauseButton.addEventListener('click', () => {
+            if (gameRunning) {
+                gamePaused = !gamePaused;
+                pauseButton.textContent = gamePaused ? '继续' : '暂停';
+                if (!gamePaused) requestAnimationFrame(gameLoop); // 继续时重新启动循环
+            }
+        });
 
-            animationFrameId = requestAnimationFrame(gameLoop);
+        function isPositionOccupied(x, y, excludeWalls = false) {
+            for (const food of foods) if (food.x === x && food.y === y) return true;
+            for (const trap of traps) {
+                if (trap.type === 'wall' && !excludeWalls) {
+                    for (let i = 0; i < 3; i++) if (x === trap.x + i && y === trap.y) return true;
+                } else if (trap.x === x && trap.y === y) return true;
+            }
+            for (const egg of eggs) if (egg.x === x && egg.y === y) return true;
+            return false;
+        }
 
-            // 控制游戏速度
-            if (++count < 11 - speed) return;
+        function isWallOccupied(x, y) {
+            for (let i = 0; i < 3; i++) {
+                if (isPositionOccupied(x + i, y, true) || x + i >= tileCount) return true;
+            }
+            return false;
+        }
+
+        function spawnFood() {
+            let x, y, attempts = 0;
+            do {
+                x = Math.floor(Math.random() * tileCount);
+                y = Math.floor(Math.random() * tileCount);
+                attempts++;
+                if (attempts > 100) return {x: tileCount - 1, y: tileCount - 1};
+            } while (isPositionOccupied(x, y));
+            return {x, y};
+        }
+
+        function spawnTrap() {
+            const rand = Math.random() * 10;
+            let type = rand < 5 ? 'bomb' : rand < 9 ? 'wall' : 'portal';
+            let x, y, attempts = 0;
+            do {
+                x = Math.floor(Math.random() * (tileCount - (type === 'wall' ? 3 : 1)));
+                y = Math.floor(Math.random() * tileCount);
+                attempts++;
+                if (attempts > 100) return;
+            } while (type === 'wall' ? isWallOccupied(x, y) : isPositionOccupied(x, y));
+            traps.push({x, y, type});
+        }
+
+        function spawnEggNearTrap(snake, type) {
+            let x, y, attempts = 0;
+            const targetTrap = type === 'silver' ? 'bomb' : 'wall';
+            do {
+                x = Math.floor(Math.random() * (tileCount - 4)) + 2;
+                y = Math.floor(Math.random() * (tileCount - 4)) + 2;
+                attempts++;
+                if (attempts > 100) {
+                    console.warn('未找到合适位置生成蛇蛋，默认随机位置');
+                    const pos = spawnFood();
+                    eggs.push({x: pos.x, y: pos.y, type, spawnTime: performance.now()});
+                    return;
+                }
+            } while (!isPositionOccupied(x, y) || !hasTrapInRange(x, y, targetTrap));
+            eggs.push({x, y, type, spawnTime: performance.now()});
+            showNotice(snake === snake1 ? 1 : 2, `${type === 'silver' ? '银蛋🥈' : '金蛋🥇'} 生成！`);
+        }
+
+        function hasTrapInRange(x, y, trapType) {
+            for (let i = -2; i <= 2; i++) {
+                for (let j = -2; j <= 2; j++) {
+                    const checkX = x + i;
+                    const checkY = y + j;
+                    if (checkX < 0 || checkX >= tileCount || checkY < 0 || checkY >= tileCount) continue;
+                    for (const trap of traps) {
+                        if (trap.type === trapType) {
+                            if (trap.type === 'wall') {
+                                for (let k = 0; k < 3; k++) {
+                                    if (checkX === trap.x + k && checkY === trap.y) return true;
+                                }
+                            } else if (checkX === trap.x && checkY === trap.y) return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function drawInitialScreen() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'green';
+            snake1.cells.forEach(cell => {
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize - 2, gridSize - 2);
+            });
+            ctx.fillStyle = 'blue';
+            snake2.cells.forEach(cell => {
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize - 2, gridSize - 2);
+            });
+            drawFoods();
+            drawTraps();
+            drawEggs();
+        }
+
+        function drawTraps() {
+            traps.forEach(trap => {
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (trap.type === 'wall') {
+                    for (let i = 0; i < 3; i++) ctx.fillText('🧱', (trap.x + i) * gridSize + gridSize / 2, trap.y * gridSize + gridSize / 2);
+                } else if (trap.type === 'portal') {
+                    ctx.fillText('🌀', trap.x * gridSize + gridSize / 2, trap.y * gridSize + gridSize / 2);
+                } else if (trap.type === 'bomb') {
+                    ctx.fillText('💣', trap.x * gridSize + gridSize / 2, trap.y * gridSize + gridSize / 2);
+                }
+            });
+        }
+
+        function drawFoods() {
+            foods.forEach(food => {
+                if (food.life) {
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🌱', food.x * gridSize + gridSize / 2, food.y * gridSize + gridSize / 2);
+                } else {
+                    ctx.fillStyle = food.color;
+                    ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+                }
+            });
+        }
+
+        function drawEggs() {
+            eggs.forEach(egg => {
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(egg.type === 'silver' ? '🥈' : '🥇', egg.x * gridSize + gridSize / 2, egg.y * gridSize + gridSize / 2);
+            });
+        }
+
+        function drawEffects() {
+            effects.forEach((effect, index) => {
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (effect.type === 'bomb' || effect.type === 'wall' || effect.type === 'egg') {
+                    ctx.fillText('💥', effect.x * gridSize + gridSize / 2, effect.y * gridSize + gridSize / 2);
+                } else if (effect.type === 'portal') {
+                    ctx.fillText('✨', effect.x * gridSize + gridSize / 2, effect.y * gridSize + gridSize / 2);
+                }
+                effect.timer--;
+                if (effect.timer <= 0) effects.splice(index, 1);
+            });
+        }
+
+        function gameLoop(timestamp) {
+            if (!gameRunning || gamePaused) return;
+            animationFrameId = requestAnimationFrame(gameLoop); // 持续请求下一帧
+
+            const frameInterval = Math.floor(60 / (speed + 1));
+            count++;
+            if (count < frameInterval) return; // 控制帧率
             count = 0;
 
+            const currentTime = performance.now();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // 更新蛇1位置
@@ -163,88 +304,149 @@
             if (snake2.y < 0) snake2.y = tileCount - 1;
             if (snake2.y >= tileCount) snake2.y = 0;
 
-            // 更新蛇1身体
             snake1.cells.unshift({x: snake1.x, y: snake1.y});
             if (snake1.cells.length > snake1.maxCells) snake1.cells.pop();
-
-            // 更新蛇2身体
             snake2.cells.unshift({x: snake2.x, y: snake2.y});
             if (snake2.cells.length > snake2.maxCells) snake2.cells.pop();
 
-            // 绘制食物
-            foods.forEach(food => {
-                ctx.fillStyle = food.color;
-                ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize-2, gridSize-2);
+            // 处理蛇蛋爆炸
+            eggs = eggs.filter(egg => {
+                if (currentTime - egg.spawnTime >= 1000) {
+                    explodeEgg(egg);
+                    return false;
+                }
+                return true;
             });
 
-            // 绘制蛇1并检查吃食物
+            // 绘制游戏元素
+            drawFoods();
+            drawTraps();
+            drawEggs();
+            drawEffects();
+
             ctx.fillStyle = 'green';
             snake1.cells.forEach(cell => {
-                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize-2, gridSize-2);
-                foods.forEach((food, index) => {
-                    if (cell.x === food.x && cell.y === food.y) {
-                        snake1.maxCells++;
-                        snake1.score += food.points;
-                        checkScoreForLife(snake1, '玩家1');
-                        foods[index] = {
-                            x: Math.floor(Math.random() * tileCount),
-                            y: Math.floor(Math.random() * tileCount),
-                            color: food.color,
-                            points: food.points
-                        };
-                    }
-                });
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize - 2, gridSize - 2);
+                checkFoodAndTraps(snake1, cell, '玩家1');
             });
 
-            // 绘制蛇2并检查吃食物
             ctx.fillStyle = 'blue';
             snake2.cells.forEach(cell => {
-                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize-2, gridSize-2);
-                foods.forEach((food, index) => {
-                    if (cell.x === food.x && cell.y === food.y) {
-                        snake2.maxCells++;
-                        snake2.score += food.points;
-                        checkScoreForLife(snake2, '玩家2');
-                        foods[index] = {
-                            x: Math.floor(Math.random() * tileCount),
-                            y: Math.floor(Math.random() * tileCount),
-                            color: food.color,
-                            points: food.points
-                        };
-                    }
-                });
+                ctx.fillRect(cell.x * gridSize, cell.y * gridSize, gridSize - 2, gridSize - 2);
+                checkFoodAndTraps(snake2, cell, '玩家2');
             });
 
-            // 检查碰撞
+            checkCollisions();
+            updateLivesFromScore(snake1, '玩家1');
+            updateLivesFromScore(snake2, '玩家2');
+
+            document.getElementById('score1').textContent = `玩家1得分: ${snake1.score} | 生命: ${snake1.lives} | 节点: ${snake1.maxCells}`;
+            document.getElementById('score2').textContent = `玩家2得分: ${snake2.score} | 生命: ${snake2.lives} | 节点: ${snake2.maxCells}`;
+        }
+
+        function explodeEgg(egg) {
+            const x = egg.x;
+            const y = egg.y;
+            const type = egg.type === 'silver' ? 'bomb' : 'wall';
+            clearArea(x, y, type);
+            for (let i = -2; i <= 2; i++) {
+                for (let j = -2; j <= 2; j++) {
+                    if (x + i >= 0 && x + i < tileCount && y + j >= 0 && y + j < tileCount) {
+                        effects.push({x: x + i, y: y + j, type: 'egg', timer: 25});
+                    }
+                }
+            }
+            showNotice(egg.type === 'silver' ? 1 : 2, `${egg.type === 'silver' ? '银蛋🥈' : '金蛋🥇'} 爆炸！`);
+        }
+
+        function checkFoodAndTraps(snake, cell, playerName) {
+            foods.forEach((food, index) => {
+                if (cell.x === food.x && cell.y === food.y) {
+                    const oldMaxCells = snake.maxCells;
+                    snake.maxCells++;
+                    snake.foodEaten++;
+                    if (food.life) {
+                        snake.lives++;
+                        showNotice(snake === snake1 ? 1 : 2, '+1生命 (食物)');
+                    } else {
+                        snake.score += food.points;
+                    }
+                    let newFood;
+                    if (snake.foodEaten >= 10 && Math.random() < 0.1) {
+                        const pos = spawnFood();
+                        if (pos) newFood = {x: pos.x, y: pos.y, points: 0, life: 1};
+                    } else {
+                        const pos = spawnFood();
+                        if (pos) {
+                            const type = Math.random() < 0.5 ? 'red' : 'yellow';
+                            newFood = {x: pos.x, y: pos.y, color: type, points: type === 'red' ? 10 : 20};
+                        }
+                    }
+                    if (newFood) foods[index] = newFood;
+                    spawnTrap();
+
+                    if (snake.maxCells % 10 === 0 && oldMaxCells % 10 !== 0) spawnEggNearTrap(snake, 'silver');
+                    if (snake.maxCells % 12 === 0 && oldMaxCells % 12 !== 0) spawnEggNearTrap(snake, 'gold');
+                }
+            });
+
+            traps = traps.filter(trap => {
+                if (trap.type === 'wall') {
+                    for (let i = 0; i < 3; i++) {
+                        if (cell.x === trap.x + i && cell.y === trap.y) {
+                            handleCollision(snake);
+                            effects.push({x: trap.x, y: trap.y, type: 'wall', timer: 25});
+                            return false;
+                        }
+                    }
+                } else if (cell.x === trap.x && cell.y === trap.y) {
+                    if (trap.type === 'bomb') {
+                        handleCollision(snake);
+                        effects.push({x: trap.x, y: trap.y, type: 'bomb', timer: 25});
+                        return false;
+                    } else if (trap.type === 'portal') {
+                        snake.x = Math.floor(Math.random() * tileCount);
+                        snake.y = Math.floor(Math.random() * tileCount);
+                        effects.push({x: trap.x, y: trap.y, type: 'portal', timer: 25});
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        function clearArea(x, y, type) {
+            const range = 2;
+            traps = traps.filter(trap => {
+                if (trap.type === type) {
+                    const dx = trap.type === 'wall' ? Math.max(...[trap.x, trap.x + 1, trap.x + 2]) : trap.x;
+                    if (Math.abs(dx - x) <= range && Math.abs(trap.y - y) <= range) return false;
+                }
+                return true;
+            });
+        }
+
+        function checkCollisions() {
+            snake1.cells.forEach(cell => {
+                snake2.cells.forEach(cell2 => {
+                    if (cell.x === cell2.x && cell.y === cell2.y && cell === snake1.cells[0]) handleCollision(snake1);
+                });
+            });
+            snake2.cells.forEach(cell => {
+                snake1.cells.forEach(cell1 => {
+                    if (cell.x === cell1.x && cell.y === cell1.y && cell === snake2.cells[0]) handleCollision(snake2);
+                });
+            });
             snake1.cells.forEach((cell, index) => {
                 for (let i = index + 1; i < snake1.cells.length; i++) {
-                    if (cell.x === snake1.cells[i].x && cell.y === snake1.cells[i].y) {
-                        handleCollision(snake1);
-                    }
+                    if (cell.x === snake1.cells[i].x && cell.y === snake1.cells[i].y) handleCollision(snake1);
                 }
-                snake2.cells.forEach(cell2 => {
-                    if (cell.x === cell2.x && cell.y === cell2.y) {
-                        handleCollision(snake1);
-                    }
-                });
             });
-
             snake2.cells.forEach((cell, index) => {
                 for (let i = index + 1; i < snake2.cells.length; i++) {
-                    if (cell.x === snake2.cells[i].x && cell.y === snake2.cells[i].y) {
-                        handleCollision(snake2);
-                    }
+                    if (cell.x === snake2.cells[i].x && cell.y === snake2.cells[i].y) handleCollision(snake2);
                 }
-                snake1.cells.forEach(cell1 => {
-                    if (cell.x === cell1.x && cell.y === cell1.y) {
-                        handleCollision(snake2);
-                    }
-                });
             });
-
-            // 更新得分和生命显示
-            document.getElementById('score1').textContent = `玩家1得分: ${snake1.score} | 生命: ${snake1.lives}`;
-            document.getElementById('score2').textContent = `玩家2得分: ${snake2.score} | 生命: ${snake2.lives}`;
         }
 
         function handleCollision(snake) {
@@ -257,68 +459,80 @@
             }
         }
 
-        function checkScoreForLife(snake, playerName) {
-            if (snake.score >= 100) {
-                snake.lives++;
-                snake.score -= 100;
-                showLifeNotice(`${playerName} +1生命`);
+        function updateLivesFromScore(snake, playerName) {
+            const newLivesFromScore = Math.floor(snake.score / 100);
+            if (newLivesFromScore > snake.livesFromScore) {
+                const addedLives = newLivesFromScore - snake.livesFromScore;
+                snake.lives += addedLives;
+                snake.livesFromScore = newLivesFromScore;
+                showNotice(snake === snake1 ? 1 : 2, `+${addedLives}生命 (分数)`);
             }
         }
 
-        function showLifeNotice(message) {
-            lifeNotice.textContent = message;
-            lifeNotice.style.display = 'block';
-            setTimeout(() => {
-                lifeNotice.style.display = 'none';
-            }, 2000); // 2秒后隐藏
+        function showNotice(player, message) {
+            const notice = player === 1 ? notice1 : notice2;
+            notice.textContent = message;
+            setTimeout(() => notice.textContent = '', 2000);
         }
 
         function resetSnake(snake) {
-            snake.x = Math.floor(tileCount / 2);
-            snake.y = Math.floor(tileCount / 2);
+            snake.x = snake === snake1 ? 5 : 25;
+            snake.y = snake === snake1 ? 5 : 25;
             snake.cells = [];
             snake.maxCells = 4;
             snake.dx = snake === snake1 ? 1 : -1;
             snake.dy = 0;
+            for (let i = 0; i < snake.maxCells; i++) {
+                snake.cells.push({x: snake.x - (snake === snake1 ? i : -i), y: snake.y});
+            }
         }
 
         function resetGame() {
             snake1.score = 0;
             snake1.lives = 5;
+            snake1.foodEaten = 0;
+            snake1.livesFromScore = 0;
             snake2.score = 0;
             snake2.lives = 5;
+            snake2.foodEaten = 0;
+            snake2.livesFromScore = 0;
             resetSnake(snake1);
             resetSnake(snake2);
             foods = [
-                {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'red', points: 10},
-                {x: Math.floor(Math.random() * tileCount), y: Math.floor(Math.random() * tileCount), color: 'yellow', points: 20}
+                {x: 10, y: 10, color: 'red', points: 10},
+                {x: 20, y: 20, color: 'yellow', points: 20}
             ];
+            traps = [];
+            eggs = [];
+            effects = [];
+            count = 0; // 重置帧计数器
+            drawInitialScreen(); // 重置后绘制初始画面
         }
 
         function stopGame() {
             gameRunning = false;
+            gamePaused = false;
             cancelAnimationFrame(animationFrameId);
             startButton.textContent = '开始游戏';
             startButton.disabled = false;
-            drawInitialScreen(); // 游戏结束后恢复初始画面
+            pauseButton.disabled = true;
+            pauseButton.textContent = '暂停';
+            drawInitialScreen();
         }
 
-        // 键盘控制
         document.addEventListener('keydown', e => {
-            if (!gameRunning) return;
-
-            // 玩家1 WASD
-            if (e.key === 'w' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = -1; }
-            else if (e.key === 's' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = 1; }
-            else if (e.key === 'a' && snake1.dx === 0) { snake1.dx = -1; snake1.dy = 0; }
-            else if (e.key === 'd' && snake1.dx === 0) { snake1.dx = 1; snake1.dy = 0; }
-
-            // 玩家2 箭头键
-            if (e.key === 'ArrowUp' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = -1; }
-            else if (e.key === 'ArrowDown' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = 1; }
-            else if (e.key === 'ArrowLeft' && snake2.dx === 0) { snake2.dx = -1; snake2.dy = 0; }
-            else if (e.key === 'ArrowRight' && snake2.dx === 0) { snake2.dx = 1; snake2.dy = 0; }
+            if (!gameRunning || gamePaused) return;
+            if (e.key === 'w' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = -1; e.preventDefault(); }
+            else if (e.key === 's' && snake1.dy === 0) { snake1.dx = 0; snake1.dy = 1; e.preventDefault(); }
+            else if (e.key === 'a' && snake1.dx === 0) { snake1.dx = -1; snake1.dy = 0; e.preventDefault(); }
+            else if (e.key === 'd' && snake1.dx === 0) { snake1.dx = 1; snake1.dy = 0; e.preventDefault(); }
+            if (e.key === 'ArrowUp' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = -1; e.preventDefault(); }
+            else if (e.key === 'ArrowDown' && snake2.dy === 0) { snake2.dx = 0; snake2.dy = 1; e.preventDefault(); }
+            else if (e.key === 'ArrowLeft' && snake2.dx === 0) { snake2.dx = -1; snake2.dy = 0; e.preventDefault(); }
+            else if (e.key === 'ArrowRight' && snake2.dx === 0) { snake2.dx = 1; snake2.dy = 0; e.preventDefault(); }
         });
+
+        resetGame(); // 初始化游戏并绘制初始画面
     </script>
 </body>
 </html>
